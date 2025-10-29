@@ -306,6 +306,71 @@ class DatabaseManager:
             finally:
                 cursor.close()
     
+    def add_pdf_info(
+        self,
+        storage_file_id: int,
+        number_of_pages: int,
+        median_nb_chr_per_page: int,
+        median_nb_images_per_page: int,
+        recorded_date: Optional[str] = None
+    ) -> None:
+        """
+        Add PDF metadata to content.pdf_file_infos table.
+        
+        Args:
+            storage_file_id: Storage file ID
+            number_of_pages: Total number of pages in PDF
+            median_nb_chr_per_page: Median number of characters per page
+            median_nb_images_per_page: Median number of images per page
+            recorded_date: Recorded date from PDF metadata
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute(
+                    """INSERT INTO content.pdf_file_infos 
+                       (storage_file, number_of_pages, median_nb_chr_per_page,
+                        median_nb_images_per_page, recorded_date)
+                       VALUES (%s, %s, %s, %s, %s)
+                       ON DUPLICATE KEY UPDATE
+                       number_of_pages = VALUES(number_of_pages),
+                       median_nb_chr_per_page = VALUES(median_nb_chr_per_page),
+                       median_nb_images_per_page = VALUES(median_nb_images_per_page),
+                       recorded_date = VALUES(recorded_date)""",
+                    (storage_file_id, number_of_pages, median_nb_chr_per_page,
+                     median_nb_images_per_page, recorded_date)
+                )
+                conn.commit()
+            finally:
+                cursor.close()
+    
+    def get_existing_files_for_object(self, storage_object_id: int) -> Dict[str, int]:
+        """
+        Get existing files (path->size mapping) for an object from database.
+        
+        Used to skip re-processing files that haven't changed.
+        
+        Args:
+            storage_object_id: Storage object ID
+            
+        Returns:
+            Dictionary mapping path to file size
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute(
+                    """SELECT p.path, f.size
+                       FROM storage.paths p
+                       JOIN storage.files f ON p.file = f.id
+                       WHERE p.storage_object = %s""",
+                    (storage_object_id,)
+                )
+                results = cursor.fetchall()
+                return {path: size for path, size in results}
+            finally:
+                cursor.close()
+    
     def batch_insert_paths(self, paths: List[Tuple[int, int, str]]) -> None:
         """
         Batch insert file paths for better performance.

@@ -6,6 +6,7 @@ optional parallel processing for high-performance operation.
 """
 
 import logging
+import os
 import multiprocessing as mp
 from typing import Optional, List
 from datetime import datetime
@@ -25,7 +26,9 @@ class ProcessingStats:
     
     objects_processed: int = 0
     files_processed: int = 0
+    files_skipped: int = 0
     images_processed: int = 0
+    pdfs_processed: int = 0
     errors: int = 0
     start_time: Optional[datetime] = None
     end_time: Optional[datetime] = None
@@ -76,7 +79,8 @@ class ImageDatabaseOrchestrator:
         self,
         object_id: str,
         root_name: str,
-        object_path
+        object_path,
+        force: bool = False
     ) -> None:
         """
         Process a single storage object.
@@ -85,6 +89,7 @@ class ImageDatabaseOrchestrator:
             object_id: BDRC object ID
             root_name: Storage root name
             object_path: Path to object directory
+            force: If False, skip files that exist in DB with same path and size
         """
         try:
             # Get or create root
@@ -103,14 +108,26 @@ class ImageDatabaseOrchestrator:
                 last_modified_at=modified_at
             )
             
+            # Get existing files if not forcing re-scan
+            existing_files = {}
+            if not force:
+                existing_files = self.db_manager.get_existing_files_for_object(object_db_id)
+            
             # Process all files in object
             files = list(self.scanner.iter_object_files(object_id, object_path))
             batch_paths = []
             
             for archive_file in files:
                 try:
+                    # Check if file should be skipped (same path and size)
+                    if not force and archive_file.relative_path in existing_files:
+                        file_size = os.path.getsize(archive_file.absolute_path)
+                        if existing_files[archive_file.relative_path] == file_size:
+                            self.stats.files_skipped += 1
+                            continue
+                    
                     # Process file
-                    file_info, image_metadata = self.processor.process_file(
+                    file_info, image_metadata, pdf_metadata = self.processor.process_file(
                         archive_file.absolute_path
                     )
                     
@@ -142,6 +159,19 @@ class ImageDatabaseOrchestrator:
                                 f"Error storing image metadata for {archive_file.absolute_path}: {e}"
                             )
                     
+                    # Store PDF metadata if available
+                    if pdf_metadata:
+                        try:
+                            self.db_manager.add_pdf_info(
+                                storage_file_id=file_id,
+                                **pdf_metadata
+                            )
+                            self.stats.pdfs_processed += 1
+                        except Exception as e:
+                            logger.error(
+                                f"Error storing PDF metadata for {archive_file.absolute_path}: {e}"
+                            )
+                    
                     self.stats.files_processed += 1
                     
                     # Batch insert paths periodically
@@ -163,7 +193,9 @@ class ImageDatabaseOrchestrator:
                 logger.info(
                     f"Progress: {self.stats.objects_processed} objects, "
                     f"{self.stats.files_processed} files, "
+                    f"{self.stats.files_skipped} skipped, "
                     f"{self.stats.images_processed} images, "
+                    f"{self.stats.pdfs_processed} PDFs, "
                     f"{self.stats.errors} errors"
                 )
         
@@ -174,7 +206,8 @@ class ImageDatabaseOrchestrator:
     def process_all(
         self,
         root_name: Optional[str] = None,
-        parallel: bool = False
+        parallel: bool = False,
+        force: bool = False
     ) -> ProcessingStats:
         """
         Process all objects in the archive.
@@ -182,6 +215,7 @@ class ImageDatabaseOrchestrator:
         Args:
             root_name: Specific root to process, or None for all roots
             parallel: Whether to use parallel processing
+            force: If False, skip files that exist in DB with same path and size
             
         Returns:
             Processing statistics
@@ -191,40 +225,45 @@ class ImageDatabaseOrchestrator:
         
         logger.info("Starting archive processing")
         logger.info(f"Parallel processing: {parallel}")
+        logger.info(f"Force re-scan: {force}")
         logger.info(f"Root filter: {root_name or 'all'}")
         
         if parallel:
-            self._process_parallel(root_name)
+            self._process_parallel(root_name, force)
         else:
-            self._process_sequential(root_name)
+            self._process_sequential(root_name, force)
         
         self.stats.end_time = datetime.now()
         
         logger.info("Processing complete")
         logger.info(f"Objects processed: {self.stats.objects_processed}")
         logger.info(f"Files processed: {self.stats.files_processed}")
+        logger.info(f"Files skipped: {self.stats.files_skipped}")
         logger.info(f"Images processed: {self.stats.images_processed}")
+        logger.info(f"PDFs processed: {self.stats.pdfs_processed}")
         logger.info(f"Errors: {self.stats.errors}")
         logger.info(f"Elapsed time: {self.stats.elapsed_time():.2f} seconds")
         
         return self.stats
     
-    def _process_sequential(self, root_name: Optional[str] = None) -> None:
+    def _process_sequential(self, root_name: Optional[str] = None, force: bool = False) -> None:
         """
         Process objects sequentially.
         
         Args:
             root_name: Root to process
+            force: If False, skip files that exist in DB with same path and size
         """
         for object_id, root, object_path in self.scanner.iter_objects(root_name):
-            self.process_object(object_id, root, object_path)
+            self.process_object(object_id, root, object_path, force)
     
-    def _process_parallel(self, root_name: Optional[str] = None) -> None:
+    def _process_parallel(self, root_name: Optional[str] = None, force: bool = False) -> None:
         """
         Process objects in parallel using multiprocessing.
         
         Args:
             root_name: Root to process
+            force: If False, skip files that exist in DB with same path and size
         """
         workers = self.processing_config.get('workers', 4)
         logger.info(f"Starting parallel processing with {workers} workers")
@@ -240,7 +279,8 @@ class ImageDatabaseOrchestrator:
             worker_func = _ParallelWorker(
                 self.db_config,
                 self.archive_config,
-                self.processing_config
+                self.processing_config,
+                force
             )
             
             # Map objects to workers
@@ -254,7 +294,9 @@ class ImageDatabaseOrchestrator:
                 if stats_dict:
                     self.stats.objects_processed += stats_dict.get('objects', 0)
                     self.stats.files_processed += stats_dict.get('files', 0)
+                    self.stats.files_skipped += stats_dict.get('files_skipped', 0)
                     self.stats.images_processed += stats_dict.get('images', 0)
+                    self.stats.pdfs_processed += stats_dict.get('pdfs', 0)
                     self.stats.errors += stats_dict.get('errors', 0)
 
 
@@ -269,12 +311,14 @@ class _ParallelWorker:
         self,
         db_config: dict,
         archive_config: dict,
-        processing_config: dict
+        processing_config: dict,
+        force: bool = False
     ):
         """Initialize worker with configuration."""
         self.db_config = db_config
         self.archive_config = archive_config
         self.processing_config = processing_config
+        self.force = force
     
     def process_object_wrapper(
         self,
@@ -304,7 +348,9 @@ class _ParallelWorker:
         stats = {
             'objects': 0,
             'files': 0,
+            'files_skipped': 0,
             'images': 0,
+            'pdfs': 0,
             'errors': 0,
         }
         
@@ -325,13 +371,25 @@ class _ParallelWorker:
                 last_modified_at=modified_at
             )
             
+            # Get existing files if not forcing re-scan
+            existing_files = {}
+            if not self.force:
+                existing_files = db_manager.get_existing_files_for_object(object_db_id)
+            
             # Process files
             files = list(scanner.iter_object_files(object_id, object_path))
             batch_paths = []
             
             for archive_file in files:
                 try:
-                    file_info, image_metadata = processor.process_file(
+                    # Check if file should be skipped (same path and size)
+                    if not self.force and archive_file.relative_path in existing_files:
+                        file_size = os.path.getsize(archive_file.absolute_path)
+                        if existing_files[archive_file.relative_path] == file_size:
+                            stats['files_skipped'] += 1
+                            continue
+                    
+                    file_info, image_metadata, pdf_metadata = processor.process_file(
                         archive_file.absolute_path
                     )
                     
@@ -358,6 +416,16 @@ class _ParallelWorker:
                         except Exception:
                             pass
                     
+                    if pdf_metadata:
+                        try:
+                            db_manager.add_pdf_info(
+                                storage_file_id=file_id,
+                                **pdf_metadata
+                            )
+                            stats['pdfs'] += 1
+                        except Exception:
+                            pass
+                    
                     stats['files'] += 1
                     
                     if len(batch_paths) >= self.processing_config.get('batch_size', 1000):
@@ -375,4 +443,5 @@ class _ParallelWorker:
         except Exception:
             stats['errors'] += 1
         
+        return stats
         return stats

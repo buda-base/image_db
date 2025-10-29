@@ -97,6 +97,12 @@ Environment variables:
     )
     
     parser.add_argument(
+        '--force',
+        action='store_true',
+        help='Force re-scan of all files (default: skip files with same path and size)'
+    )
+    
+    parser.add_argument(
         '--verbose',
         '-v',
         action='store_true',
@@ -131,7 +137,8 @@ Environment variables:
         parallel = config.get_processing_config().get('parallel', False) or args.parallel
         stats = orchestrator.process_all(
             root_name=args.root,
-            parallel=parallel
+            parallel=parallel,
+            force=args.force
         )
         
         # Print summary
@@ -140,7 +147,9 @@ Environment variables:
         print("="*60)
         print(f"Objects processed: {stats.objects_processed}")
         print(f"Files processed: {stats.files_processed}")
+        print(f"Files skipped: {stats.files_skipped}")
         print(f"Images processed: {stats.images_processed}")
+        print(f"PDFs processed: {stats.pdfs_processed}")
         print(f"Errors: {stats.errors}")
         print(f"Elapsed time: {stats.elapsed_time():.2f} seconds")
         print("="*60)
