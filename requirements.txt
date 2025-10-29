@@ -13,3 +13,6 @@ rawpy>=0.18.0,<1.0.0
 
 # PDF processing
 PyMuPDF>=1.23.0,<2.0.0
+
+# PRONOM file format identification
+opf-fido>=1.4.0

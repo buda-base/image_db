@@ -156,6 +156,7 @@ class DatabaseManager:
         self,
         sha256_hash: bytes,
         size: int,
+        pronom_number: Optional[int] = None,
         created_at: Optional[str] = None,
         earliest_mdate: Optional[str] = None
     ) -> Tuple[int, bytes]:
@@ -165,6 +166,7 @@ class DatabaseManager:
         Args:
             sha256_hash: SHA256 hash of file content (32 bytes)
             size: File size in bytes
+            pronom_number: PRONOM file format identifier number (optional)
             created_at: Creation timestamp
             earliest_mdate: Earliest modification date
             
@@ -188,6 +190,14 @@ class DatabaseManager:
                 result = cursor.fetchone()
                 
                 if result:
+                    # File exists - optionally update pronom_number if it was NULL and we have a value now
+                    file_id = result[0]
+                    if pronom_number is not None:
+                        cursor.execute(
+                            "UPDATE storage.files SET pronom_number = %s WHERE id = %s AND pronom_number IS NULL",
+                            (pronom_number, file_id)
+                        )
+                        conn.commit()
                     return result[0], result[1]
                 
                 # Generate persistent ID (sha256 or random if collision)
@@ -206,9 +216,9 @@ class DatabaseManager:
                 # Create new file
                 cursor.execute(
                     """INSERT INTO storage.files 
-                       (sha256, size, persistent_id, created_at, earliest_mdate)
-                       VALUES (%s, %s, %s, %s, %s)""",
-                    (sha256_hash, size, persistent_id, created_at, earliest_mdate)
+                       (sha256, size, pronom_number, persistent_id, created_at, earliest_mdate)
+                       VALUES (%s, %s, %s, %s, %s, %s)""",
+                    (sha256_hash, size, pronom_number, persistent_id, created_at, earliest_mdate)
                 )
                 conn.commit()
                 return cursor.lastrowid, persistent_id

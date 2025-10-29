@@ -46,6 +46,21 @@ except ImportError:
     PYMUPDF_AVAILABLE = False
     logging.warning("PyMuPDF not available, PDF processing will be limited")
 
+try:
+    import fido.fido as fido_module
+    # Initialize fido once at module level
+    _fido = None
+    try:
+        _fido = fido_module.Fido(quiet=True, nocontainer=True, format_files=['formats-v109.xml'])
+        FIDO_AVAILABLE = True
+    except Exception as e:
+        FIDO_AVAILABLE = False
+        logging.warning(f"fido initialization failed: {e}, PRONOM identification will be limited")
+except ImportError:
+    FIDO_AVAILABLE = False
+    _fido = None
+    logging.warning("fido not available, PRONOM identification will be limited")
+
 logger = logging.getLogger(__name__)
 
 
@@ -142,9 +157,67 @@ class ImageProcessor:
             logger.error(f"Error reading file {file_path}: {e}")
             raise
     
+    def get_pronom_number(self, file_path: str) -> Optional[int]:
+        """
+        Detect PRONOM identifier for a file using fido.
+        
+        PRONOM is a file format registry that provides unique identifiers (PUIDs)
+        for file formats. This method uses the fido library to identify the format.
+        
+        Args:
+            file_path: Path to file
+            
+        Returns:
+            PRONOM number (integer part of PUID, e.g., 111 for x-fmt/111) or None
+        """
+        if not FIDO_AVAILABLE or _fido is None:
+            return None
+        
+        try:
+            import io
+            import sys
+            
+            # Capture fido's output
+            old_stdout = sys.stdout
+            sys.stdout = captured_output = io.StringIO()
+            
+            try:
+                # Use fido to identify the file
+                _fido.identify_file(file_path)
+            finally:
+                # Restore stdout
+                sys.stdout = old_stdout
+            
+            # Parse the captured output
+            output = captured_output.getvalue()
+            if output:
+                # Output format: OK,count,PUID,"Name","Type",size,"path","mime","method"
+                # We want the first match (highest confidence)
+                lines = output.strip().split('\n')
+                for line in lines:
+                    if line.startswith('OK,'):
+                        parts = line.split(',')
+                        if len(parts) > 2:
+                            puid_str = parts[2]
+                            
+                            if puid_str and '/' in puid_str:
+                                # Extract numeric part from "fmt/123" or "x-fmt/456"
+                                num_str = puid_str.split('/')[-1]
+                                try:
+                                    return int(num_str)
+                                except ValueError:
+                                    logger.debug(f"Could not parse PRONOM number from: {puid_str}")
+                        # Take the first match
+                        break
+            
+            return None
+        except Exception as e:
+            logger.debug(f"Error detecting PRONOM for {file_path}: {e}")
+            return None
+    
     def get_file_info(self, file_path: str) -> Dict[str, Any]:
         """
-        Get basic file information (size, timestamps, hash).
+        Get basic file information (size, timestamps, hash, PRONOM).
         
         Args:
             file_path: Path to file
@@ -158,10 +231,12 @@ class ImageProcessor:
         try:
             stat_info = os.stat(file_path)
             sha256_hash = self.calculate_sha256(file_path)
+            pronom_number = self.get_pronom_number(file_path)
             
             return {
                 'sha256': sha256_hash,
                 'size': stat_info.st_size,
+                'pronom_number': pronom_number,
                 'created_at': datetime.fromtimestamp(stat_info.st_ctime),
                 'modified_at': datetime.fromtimestamp(stat_info.st_mtime),
             }

@@ -135,6 +135,7 @@ class ImageDatabaseOrchestrator:
                     file_id, persistent_id = self.db_manager.get_or_create_file(
                         sha256_hash=file_info['sha256'],
                         size=file_info['size'],
+                        pronom_number=file_info.get('pronom_number'),
                         created_at=file_info['created_at'],
                         earliest_mdate=file_info['modified_at']
                     )
@@ -396,6 +397,7 @@ class _ParallelWorker:
                     file_id, _ = db_manager.get_or_create_file(
                         sha256_hash=file_info['sha256'],
                         size=file_info['size'],
+                        pronom_number=file_info.get('pronom_number'),
                         created_at=file_info['created_at'],
                         earliest_mdate=file_info['modified_at']
                     )
