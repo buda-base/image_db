@@ -65,12 +65,10 @@ def example_parallel_processing():
     # Create config
     config = Config()
     
-    # Override settings programmatically
-    config._config['processing'] = {
-        'workers': 8,
-        'batch_size': 5000,
-        'parallel': True,
-    }
+    # Override settings programmatically using public API
+    config.set('processing', 'workers', 8)
+    config.set('processing', 'batch_size', 5000)
+    config.set('processing', 'parallel', True)
     
     # Create orchestrator
     orchestrator = ImageDatabaseOrchestrator(config)

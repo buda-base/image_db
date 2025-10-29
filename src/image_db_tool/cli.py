@@ -115,11 +115,11 @@ Environment variables:
         
         # Override config with CLI arguments
         if args.workers:
-            config._config.setdefault('processing', {})['workers'] = args.workers
+            config.set('processing', 'workers', args.workers)
         if args.batch_size:
-            config._config.setdefault('processing', {})['batch_size'] = args.batch_size
+            config.set('processing', 'batch_size', args.batch_size)
         if args.parallel:
-            config._config.setdefault('processing', {})['parallel'] = True
+            config.set('processing', 'parallel', True)
         
         logger.info("Starting BDRC Image Database Tool")
         logger.info(f"Configuration: {args.config}")

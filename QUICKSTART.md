@@ -178,9 +178,6 @@ Use `--verbose` for DEBUG level logging.
 ## Common Commands
 
 ```bash
-# Dry run (requires implementing dry-run mode in code)
-# python -m image_db_tool.cli --dry-run
-
 # Process with logging
 python -m image_db_tool.cli --verbose 2>&1 | tee processing.log
 

@@ -141,3 +141,16 @@ class Config:
             'batch_size': self.get('processing', 'batch_size', 1000),
             'parallel': self.get('processing', 'parallel', False),
         }
+    
+    def set(self, section: str, key: str, value: Any) -> None:
+        """
+        Set configuration value programmatically.
+        
+        Args:
+            section: Configuration section name
+            key: Configuration key name
+            value: Value to set
+        """
+        if section not in self._config:
+            self._config[section] = {}
+        self._config[section][key] = value
