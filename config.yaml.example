@@ -1,0 +1,41 @@
+# BDRC Image Database Tool - Configuration File
+#
+# This file contains configuration for database connection and processing settings.
+# Environment variables override values in this file.
+
+# Database Configuration
+# For security, it's recommended to use environment variables for credentials:
+# - DB_HOST
+# - DB_PORT
+# - DB_USER
+# - DB_PASSWORD
+# - DB_NAME
+database:
+  host: localhost
+  port: 3306
+  user: bdrc_user
+  password: CHANGE_ME  # Use DB_PASSWORD env var instead
+  name: storage
+
+# Archive Configuration
+archive:
+  # Mount point where archive roots are located
+  mount_point: /mnt
+  
+  # List of archive roots to scan
+  roots:
+    - Archive0
+    - Archive1
+    - Archive2
+    - Archive3
+
+# Processing Configuration
+processing:
+  # Number of parallel workers (for parallel mode)
+  workers: 4
+  
+  # Batch size for database operations (tuning for performance)
+  batch_size: 1000
+  
+  # Enable parallel processing by default
+  parallel: false
