@@ -1,2 +1,3 @@
-# image_db
-Image database of BDRC
+# Image database of BDRC
+
+This repository contains resources (documentation and scripts) for the BDRC image database.
